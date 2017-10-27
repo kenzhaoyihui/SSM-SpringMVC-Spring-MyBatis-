@@ -74,8 +74,8 @@ f1 = file('temp.pkl', 'r')
 
 p = pickle.load(f1)
 
-p.fullname
-YihuiZjao
+>p.fullname
+'YihuiZhao'
 
 f1.close()
 
