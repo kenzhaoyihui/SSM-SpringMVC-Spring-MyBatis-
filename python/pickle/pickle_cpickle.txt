@@ -1,0 +1,442 @@
+持久性就是指保持对象，甚至在多次执行同一程序之间也保持对象。通过本文，您会对 Python对象的各种持久性机制（从关系数据库到 Python 的 pickle以及其它机制）有一个总体认识。另外，还会让您更深一步地了解Python 的对象序列化能力。
+什么是持久性？
+
+持 久性的基本思想很简单。假定有一个 Python 程序，它可能是一个管理日常待办事项的程序，您希望在多次执行这个程序之间可以保存应用程序对象（待办事项）。换句话说，您希望将对象存储在磁盘上，便于 以后检索。这就是持久性。要达到这个目的，有几种方法，每一种方法都有其优缺点。
+
+例如，可以将对象数据存储在某种格式的文本文件中，譬如 CSV 文件。或者可以用关系数据库，譬如 Gadfly、MySQL、PostgreSQL 或者 DB2。这些文件格式和数据库都非常优秀，对于所有这些存储机制，Python 都有健壮的接口。
+
+这 些存储机制都有一个共同点：存储的数据是独立于对这些数据进行操作的对象和程序。这样做的好处是，数据可以作为共享的资源，供其它应用程序使用。缺点 是，用这种方式，可以允许其它程序访问对象的数据，这违背了面向对象的封装性原则 — 即对象的数据只能通过这个对象自身的公共（public）接口来访问。
+
+另外，对于某些应用程序，关系数据库 方法可能不是很理想。尤其是，关系数据库不理解对象。相反，关系数据库会强行 使用自己的类型系统和关系数据模型（表），每张表包含一组元组（行），每行包含具有固定数目的静态类型字段（列）。如果应用程序的对象模型不能够方便地转 换到关系模型，那么在将对象映射到元组以及将元组映射回对象方面，会碰到一定难度。这种困难常被称为阻碍性不匹配（impedence- mismatch）问题。
+
+一些经过 pickle 的 Python
+
+pickle 模块及其同类模块 cPickle 向 Python 提供了 pickle 支持。后者是用 C 编码的，它具有更好的性能，对于大多数应用程序，推荐使用该模块。我们将继续讨论 pickle ，但本文的示例实际是利用了 cPickle 。由于其中大多数示例要用 Python shell 来显示，所以先展示一下如何导入 cPickle ，并可以作为 pickle 来引用它：
+
+复制代码 代码如下:
+
+>>> import cPickle as pickle
+
+现在已经导入了该模块，接下来让我们看一下 pickle 接口。 pickle 模块提供了以下函数对： dumps(object) 返回一个字符串，它包含一个 pickle 格式的对象； loads(string) 返回包含在 pickle 字符串中的对象； dump(object, file) 将对象写到文件，这个文件可以是实际的物理文件，但也可以是任何类似于文件的对象，这个对象具有 write() 方法，可以接受单个的字符串参数； load(file) 返回包含在 pickle 文件中的对象。
+缺省情况下， dumps() 和 dump() 使用可打印的 ASCII 表示来创建 pickle。两者都有一个 final 参数（可选），如果为 True ，则该参数指定用更快以及更小的二进制表示来创建 pickle。 loads() 和 load() 函数自动检测 pickle 是二进制格式还是文本格式。
+
+清单 1 显示了一个交互式会话，这里使用了刚才所描述的 dumps() 和 loads() 函数：
+
+
+清单 1. dumps() 和 loads() 的演示
+
+复制代码 代码如下:
+
+Welcome To PyCrust 0.7.2 - The Flakiest Python Shell
+Sponsored by Orbtech - Your source for Python programming expertise.
+Python 2.2.1 (#1, Aug 27 2002, 10:22:32)
+[GCC 3.2 (Mandrake Linux 9.0 3.2-1mdk)] on linux-i386
+Type "copyright", "credits" or "license" for more information.
+>>> import cPickle as pickle
+>>> t1 = ('this is a string', 42, [1, 2, 3], None)
+>>> t1
+('this is a string', 42, [1, 2, 3], None)
+>>> p1 = pickle.dumps(t1)
+>>> p1
+"(S'this is a string'\nI42\n(lp1\nI1\naI2\naI3\naNtp2\n."
+>>> print p1
+(S'this is a string'
+I42
+(lp1
+I1
+aI2
+aI3
+aNtp2
+.
+>>> t2 = pickle.loads(p1)
+>>> t2
+('this is a string', 42, [1, 2, 3], None)
+>>> p2 = pickle.dumps(t1, True)
+>>> p2
+'(U\x10this is a stringK*]q\x01(K\x01K\x02K\x03eNtq\x02.'
+>>> t3 = pickle.loads(p2)
+>>> t3
+('this is a string', 42, [1, 2, 3], None)
+注：该文本 pickle 格式很简单，这里就不解释了。事实上，在 pickle 模块中记录了所有使用的约定。我们还应该指出，在我们的示例中使用的都是简单对象，因此使用二进制 pickle 格式不会在节省空间上显示出太大的效率。然而，在实际使用复杂对象的系统中，您会看到，使用二进制格式可以在大小和速度方面带来显著的改进。
+
+接下来，我们看一些示例，这些示例用到了 dump() 和 load() ，它们使用文件和类似文件的对象。这些函数的操作非常类似于我们刚才所看到的 dumps() 和 loads() ，区别在于它们还有另一种能力 — dump() 函数能一个接着一个地将几个对象转储到同一个文件。随后调用 load() 来以同样的顺序检索这些对象。清单 2 显示了这种能力的实际应用：
+
+清单 2. dump() 和 load() 示例
+
+复制代码 代码如下:
+
+>>> a1 = 'apple'
+>>> b1 = {1: 'One', 2: 'Two', 3: 'Three'}
+>>> c1 = ['fee', 'fie', 'foe', 'fum']
+>>> f1 = file('temp.pkl', 'wb')
+>>> pickle.dump(a1, f1, True)
+>>> pickle.dump(b1, f1, True)
+>>> pickle.dump(c1, f1, True)
+>>> f1.close()
+>>> f2 = file('temp.pkl', 'rb')
+>>> a2 = pickle.load(f2)
+>>> a2
+'apple'
+>>> b2 = pickle.load(f2)
+>>> b2
+{1: 'One', 2: 'Two', 3: 'Three'}
+>>> c2 = pickle.load(f2)
+>>> c2
+['fee', 'fie', 'foe', 'fum']
+>>> f2.close()
+Pickle 的威力
+
+到目前为止，我们讲述了关于 pickle 方面的基本知识。在这一节，将讨论一些高级问题，当您开始 pickle 复杂对象时，会遇到这些问题，其中包括定制类的实例。幸运的是，Python 可以很容易地处理这种情形。
+
+可移植性
+
+从 空间和时间上说，Pickle 是可移植的。换句话说，pickle 文件格式独立于机器的体系结构，这意味着，例如，可以在 Linux 下创建一个 pickle，然后将它发送到在 Windows 或 Mac OS 下运行的 Python 程序。并且，当升级到更新版本的 Python 时，不必担心可能要废弃已有的 pickle。Python 开发人员已经保证 pickle 格式将可以向后兼容 Python 各个版本。事实上，在 pickle 模块中提供了有关目前以及所支持的格式方面的详细信息：
+
+
+清单 3. 检索所支持的格式
+
+复制代码 代码如下:
+
+>>> pickle.format_version
+'1.3'
+>>> pickle.compatible_formats
+['1.0', '1.1', '1.2']
+多个引用，同一对象
+
+在 Python 中，变量是对象的引用。同时，也可以用多个变量引用同一个对象。经证明，Python 在用经过 pickle 的对象维护这种行为方面丝毫没有困难，如清单 4 所示：
+
+清单 4. 对象引用的维护
+
+复制代码 代码如下:
+
+>>> a = [1, 2, 3]
+>>> b = a
+>>> a
+[1, 2, 3]
+>>> b
+[1, 2, 3]
+>>> a.append(4)
+>>> a
+[1, 2, 3, 4]
+>>> b
+[1, 2, 3, 4]
+>>> c = pickle.dumps((a, b))
+>>> d, e = pickle.loads(c)
+>>> d
+[1, 2, 3, 4]
+>>> e
+[1, 2, 3, 4]
+>>> d.append(5)
+>>> d
+[1, 2, 3, 4, 5]
+>>> e
+[1, 2, 3, 4, 5]
+循环引用和递归引用
+
+可以将刚才演示过的对象引用支持扩展到 循环引用（两个对象各自包含对对方的引用）和 递归引用（一个对象包含对其自身的引用）。下面两个清单着重显示这种能力。我们先看一下递归引用：
+
+>清单 5. 递归引用
+
+复制代码 代码如下:
+
+>>> l = [1, 2, 3]
+>>> l.append(l)
+>>> l
+[1, 2, 3, [...]]
+>>> l[3]
+[1, 2, 3, [...]]
+>>> l[3][3]
+[1, 2, 3, [...]]
+>>> p = pickle.dumps(l)
+>>> l2 = pickle.loads(p)
+>>> l2
+[1, 2, 3, [...]]
+>>> l2[3]
+[1, 2, 3, [...]]
+>>> l2[3][3]
+[1, 2, 3, [...]]
+现在，看一个循环引用的示例：
+
+清单 6. 循环引用
+
+复制代码 代码如下:
+
+>>> a = [1, 2]
+>>> b = [3, 4]
+>>> a.append(b)
+>>> a
+[1, 2, [3, 4]]
+>>> b.append(a)
+>>> a
+[1, 2, [3, 4, [...]]]
+>>> b
+[3, 4, [1, 2, [...]]]
+>>> a[2]
+[3, 4, [1, 2, [...]]]
+>>> b[2]
+[1, 2, [3, 4, [...]]]
+>>> a[2] is b
+>>> b[2] is a
+>>> f = file('temp.pkl', 'w')
+>>> pickle.dump((a, b), f)
+>>> f.close()
+>>> f = file('temp.pkl', 'r')
+>>> c, d = pickle.load(f)
+>>> f.close()
+>>> c
+[1, 2, [3, 4, [...]]]
+>>> d
+[3, 4, [1, 2, [...]]]
+>>> c[2]
+[3, 4, [1, 2, [...]]]
+>>> d[2]
+[1, 2, [3, 4, [...]]]
+>>> c[2] is d
+>>> d[2] is c
+注意，如果分别 pickle 每个对象，而不是在一个元组中一起 pickle 所有对象，会得到略微不同（但很重要）的结果，如清单 7 所示：
+
+
+清单 7. 分别 pickle vs. 在一个元组中一起 pickle
+
+复制代码 代码如下:
+
+>>> f = file('temp.pkl', 'w')
+>>> pickle.dump(a, f)
+>>> pickle.dump(b, f)
+>>> f.close()
+>>> f = file('temp.pkl', 'r')
+>>> c = pickle.load(f)
+>>> d = pickle.load(f)
+>>> f.close()
+>>> c
+[1, 2, [3, 4, [...]]]
+>>> d
+[3, 4, [1, 2, [...]]]
+>>> c[2]
+[3, 4, [1, 2, [...]]]
+>>> d[2]
+[1, 2, [3, 4, [...]]]
+>>> c[2] is d
+>>> d[2] is c
+相等，但并不总是相同
+
+正如在上一个示例所暗示的，只有在这些对象引用内存中同一个对象时，它们才是相同的。在 pickle 情形中，每个对象被恢复到一个与原来对象相等的对象，但不是同一个对象。换句话说，每个 pickle 都是原来对象的一个副本：
+
+
+清单 8. 作为原来对象副本的被恢复的对象
+
+复制代码 代码如下:
+
+>>> j = [1, 2, 3]
+>>> k = j
+>>> k is j
+>>> x = pickle.dumps(k)
+>>> y = pickle.loads(x)
+>>> y
+[1, 2, 3]
+>>> y == k
+>>> y is k
+>>> y is j
+>>> k is j
+同时，我们看到 Python 能够维护对象之间的引用，这些对象是作为一个单元进行 pickle 的。然而，我们还看到分别调用 dump() 会使 Python 无法维护对在该单元外部进行 pickle 的对象的引用。相反，Python 复制了被引用对象，并将副本和被 pickle 的对象存储在一起。对于 pickle 和恢复单个对象层次结构的应用程序，这是没有问题的。但要意识到还有其它情形。
+
+值得指出的是，有一个选项确实允许分别 pickle 对象，并维护相互之间的引用，只要这些对象都是 pickle 到同一文件即可。 pickle 和 cPickle 模块提供了一个 Pickler （与此相对应是 Unpickler ），它能够跟踪已经被 pickle 的对象。通过使用这个 Pickler ，将会通过引用而不是通过值来 pickle 共享和循环引用：
+
+
+清单 9. 维护分别 pickle 的对象间的引用
+
+复制代码 代码如下:
+
+>>> f = file('temp.pkl', 'w')
+>>> pickler = pickle.Pickler(f)
+>>> pickler.dump(a)
+<cPickle.Pickler object at 0x89b0bb8>
+>>> pickler.dump(b)
+<cPickle.Pickler object at 0x89b0bb8>
+>>> f.close()
+>>> f = file('temp.pkl', 'r')
+>>> unpickler = pickle.Unpickler(f)
+>>> c = unpickler.load()
+>>> d = unpickler.load()
+>>> c[2]
+[3, 4, [1, 2, [...]]]
+>>> d[2]
+[1, 2, [3, 4, [...]]]
+>>> c[2] is d
+>>> d[2] is c
+不可 pickle 的对象
+
+一 些对象类型是不可 pickle 的。例如，Python 不能 pickle 文件对象（或者任何带有对文件对象引用的对象），因为 Python 在 unpickle 时不能保证它可以重建该文件的状态（另一个示例比较难懂，在这类文章中不值得提出来）。试图 pickle 文件对象会导致以下错误：
+
+
+清单 10. 试图 pickle 文件对象的结果
+
+复制代码 代码如下:
+
+>>> f = file('temp.pkl', 'w')
+>>> p = pickle.dumps(f)
+Traceback (most recent call last):
+  File "<input>", line 1, in ?
+  File "/usr/lib/python2.2/copy_reg.py", line 57, in _reduce
+    raise TypeError, "can't pickle %s objects" % base.__name__
+TypeError: can't pickle file objects
+
+类实例
+
+与 pickle 简单对象类型相比，pickle 类实例要多加留意。这主要由于 Python 会 pickle 实例数据（通常是 _dict_ 属性）和类的名称，而不会 pickle 类的代码。当 Python unpickle 类的实例时，它会试图使用在 pickle 该实例时的确切的类名称和模块名称（包括任何包的路径前缀）导入包含该类定义的模块。另外要注意，类定义必须出现在模块的最顶层，这意味着它们不能是嵌套 的类（在其它类或函数中定义的类）。
+
+当 unpickle 类的实例时，通常不会再调用它们的 _init_() 方法。相反，Python 创建一个通用类实例，并应用已进行过 pickle 的实例属性，同时设置该实例的 _class_ 属性，使其指向原来的类。
+
+对 Python 2.2 中引入的新型类进行 unpickle 的机制与原来的略有不同。虽然处理的结果实际上与对旧型类处理的结果相同，但 Python 使用 copy_reg 模块的 _reconstructor() 函数来恢复新型类的实例。
+
+如果希望对新型或旧型类的实例修改缺省的 pickle 行为，则可以定义特殊的类的方法 _getstate_() 和 _setstate_() ，在保存和恢复类实例的状态信息期间，Python 会调用这些方法。在以下几节中，我们会看到一些示例利用了这些特殊的方法。
+
+现在，我们看一个简单的类实例。首先，创建一个 persist.py 的 Python 模块，它包含以下新型类的定义：
+
+清单 11. 新型类的定义
+
+复制代码 代码如下:
+
+class Foo(object):
+    def __init__(self, value):
+        self.value = value
+
+现在可以 pickle Foo 实例，并看一下它的表示：
+清单 12. pickle Foo 实例
+
+复制代码 代码如下:
+
+>>> import cPickle as pickle
+>>> from Orbtech.examples.persist import Foo
+>>> foo = Foo('What is a Foo?')
+>>> p = pickle.dumps(foo)
+>>> print p
+ccopy_reg
+_reconstructor
+p1
+(cOrbtech.examples.persist
+Foo
+p2
+c__builtin__
+object
+p3
+NtRp4
+(dp5
+S'value'
+p6
+S'What is a Foo?'
+sb.
+>>>
+可以看到这个类的名称 Foo 和全限定的模块名称 Orbtech.examples.persist 都存储在 pickle 中。如果将这个实例 pickle 成一个文件，稍后再 unpickle 它或在另一台机器上 unpickle，则 Python 会试图导入 Orbtech.examples.persist 模块，如果不能导入，则会抛出异常。如果重命名该类和该模块或者将该模块移到另一个目录，则也会发生类似的错误。
+
+这里有一个 Python 发出错误消息的示例，当我们重命名 Foo 类，然后试图装入先前进行过 pickle 的 Foo 实例时会发生该错误：
+
+
+清单 13. 试图装入一个被重命名的 Foo 类的经过 pickle 的实例
+
+复制代码 代码如下:
+
+>>> import cPickle as pickle
+>>> f = file('temp.pkl', 'r')
+>>> foo = pickle.load(f)
+Traceback (most recent call last):
+  File "<input>", line 1, in ?
+AttributeError: 'module' object has no attribute 'Foo'
+在重命名 persist.py 模块之后，也会发生类似的错误：
+
+清单 14. 试图装入一个被重命名的 persist.py 模块的经过 pickle 的实例
+
+复制代码 代码如下:
+
+>>> import cPickle as pickle
+>>> f = file('temp.pkl', 'r')
+>>> foo = pickle.load(f)
+Traceback (most recent call last):
+  File "<input>", line 1, in ?
+ImportError: No module named persist
+我们会在下面 模式改进这一节提供一些技术来管理这类更改，而不会破坏现有的 pickle。
+
+特殊的状态方法
+
+前面提到对一些对象类型（譬如，文件对象）不能进行 pickle。处理这种不能 pickle 的对象的实例属性时可以使用特殊的方法（ _getstate_() 和 _setstate_() ）来修改类实例的状态。这里有一个 Foo 类的示例，我们已经对它进行了修改以处理文件对象属性：
+
+清单 15. 处理不能 pickle 的实例属性
+
+复制代码 代码如下:
+
+class Foo(object):
+    def __init__(self, value, filename):
+        self.value = value
+        self.logfile = file(filename, 'w')
+    def __getstate__(self):
+        """Return state values to be pickled."""
+        f = self.logfile
+        return (self.value, f.name, f.tell())
+    def __setstate__(self, state):
+        """Restore state from the unpickled state values."""
+        self.value, name, position = state
+        f = file(name, 'w')
+        f.seek(position)
+        self.logfile = f
+模式改进
+
+随 着时间的推移，您会发现自己必须要更改类的定义。如果已经对某个类实例进行了 pickle，而现在又需要更改这个类，则您可能要检索和更新那些实例，以便它们能在新的类定义下继续正常工作。而我们已经看到在对类或模块进行某些更改 时，会出现一些错误。幸运的是，pickle 和 unpickle 过程提供了一些 hook，我们可以用它们来支持这种模式改进的需要。
+
+在 这一节，我们将探讨一些方法来预测常见问题以及如何解决这些问题。由于不能 pickle 类实例代码，因此可以添加、更改和除去方法，而不会影响现有的经过 pickle 的实例。出于同样的原因，可以不必担心类的属性。您必须确保包含类定义的代码模块在 unpickle 环境中可用。同时还必须为这些可能导致 unpickle 问题的更改做好规划，这些更改包括：更改类名、添加或除去实例的属性以及改变类定义模块的名称或位置。
+
+类名的更改
+
+要 更改类名，而不破坏先前经过 pickle 的实例，请遵循以下步骤。首先，确保原来的类的定义没有被更改，以便在 unpickle 现有实例时可以找到它。不要更改原来的名称，而是在与原来类定义所在的同一个模块中，创建该类定义的一个副本，同时给它一个新的类名。然后使用实际的新类 名来替代 NewClassName ，将以下方法添加到原来类的定义中：
+
+清单 16. 更改类名：添加到原来类定义的方法
+
+复制代码 代码如下:
+
+def __setstate__(self, state):
+    self.__dict__.update(state)
+    self.__class__ = NewClassName
+当 unpickle 现有实例时，Python 将查找原来类的定义，并调用实例的 _setstate_() 方法，同时将给新的类定义重新分配该实例的 _class_ 属性。一旦确定所有现有的实例都已经 unpickle、更新和重新 pickle 后，可以从源代码模块中除去旧的类定义。
+
+属性的添加和删除
+
+这些特殊的状态方法 _getstate_() 和 _setstate_() 再一次使我们能控制每个实例的状态，并使我们有机会处理实例属性中的更改。让我们看一个简单的类的定义，我们将向其添加和除去一些属性。这是是最初的定义：
+
+
+清单 17. 最初的类定义
+
+复制代码 代码如下:
+
+class Person(object):
+    def __init__(self, firstname, lastname):
+        self.firstname = firstname
+        self.lastname = lastname
+假定已经创建并 pickle 了 Person 的实例，现在我们决定真的只想存储一个名称属性，而不是分别存储姓和名。这里有一种方式可以更改类的定义，它将先前经过 pickle 的实例迁移到新的定义：
+
+复制代码 代码如下:
+
+class Person(object):
+    def __init__(self, fullname):
+        self.fullname = fullname
+    def __setstate__(self, state):
+        if 'fullname' not in state:
+            first = ''
+            last = ''
+            if 'firstname' in state:
+                first = state['firstname']
+                del state['firstname']
+            if 'lastname' in state:
+                last = state['lastname']
+                del state['lastname']
+            self.fullname = " ".join([first, last]).strip()
+        self.__dict__.update(state)
+在这个示例，我们添加了一个新的属性 fullname ，并除去了两个现有的属性 firstname 和 lastname 。当对先前进行过 pickle 的实例执行 unpickle 时，其先前进行过 pickle 的状态会作为字典传递给 _setstate_() ，它将包括 firstname 和 lastname 属性的值。接下来，将这两个值组合起来，并将它们分配给新属性 fullname 。在这个过程中，我们删除了状态字典中旧的属性。更新和重新 pickle 先前进行过 pickle 的所有实例之后，现在可以从类定义中除去 _setstate_() 方法。
+
+模块的修改
+
+在概念上，模块的名称或位置的改变类似于类名称的改变，但处理方式却完全不同。那是因为模块的信息存储在 pickle 中，而不是通过标准的 pickle 接口就可以修改的属性。事实上，改变模块信息的唯一办法是对实际的 pickle 文件本身执行查找和替换操作。至于如何确切地去做，这取决于具体的操作系统和可使用的工具。很显然，在这种情况下，您会想备份您的文件，以免发生错误。但 这种改动应该非常简单，并且对二进制 pickle 格式进行更改与对文本 pickle 格式进行更改应该一样有效。
+
+结束语
+
+对象持久性依赖于底层编程语言的对象序列化能力。对于 Python 对象即意味着 pickle。Python 的 pickle 为 Python 对象有效的持久性管理提供了健壮的和可靠的基础。在下面的 参考资料中，您将会找到有关建立在 Python pickle 能力之上的系统的信息。
+
+以上是云栖社区小编为您精心准备的的内容，在云栖社区的博客、问答、公众号、人物、课程等栏目也有的相关内容，欢迎继续使用右上角搜索按钮进行搜索python ， 持久性管理 pickle模块 python pickle模块、python3 pickle模块、python中pickle模块、python pickle、python3 pickle，以便于您获取更多的相关知识。
